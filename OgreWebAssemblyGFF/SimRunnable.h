@@ -28,8 +28,10 @@ public:
 
 	Ogre::Camera* mCamera;
 	Ogre::RenderWindow* mWindow;
+	Ogre::SceneNode* mainNode;
 	Ogre::SceneNode* cameraNode;
 	Ogre::SceneNode* cameraAnchor;
+	// OgreBites::SdkCameraMan* mCameraMan;
 
 	Ogre::TerrainGroup* mTerrainGroup;
 	Ogre::TerrainGlobalOptions* mTerrainGlobals;
@@ -45,6 +47,23 @@ public:
 
 	// Create 'fields' on map
 	void createFields(Ogre::Terrain* terrain, std::vector<std::pair<Ogre::Vector3, Ogre::Vector3>>);
+
+	// Handle Animation
+	bool nextLocation();
+	std::deque<Ogre::Vector3> mWalkList;
+
+	Ogre::Real mDistance;
+	Ogre::Real mWalkSpd;
+	Ogre::Vector3 mDirection;
+	Ogre::Vector3 mDestination;
+	Ogre::AnimationState* mAnimationState;
+	Ogre::Entity* mEntity;
+	Ogre::SceneNode* mNode;
+
+	bool frameRenderingQueued(const Ogre::FrameEvent& fe);
+
+	Ogre::Vector2 updateCoords();
+	OgreBites::TextBox* mCoordsBox;
 };
 
 #endif __SimRunnable_h_

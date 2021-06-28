@@ -13,7 +13,15 @@ namespace Offsets {
 
 SimRunnable::SimRunnable()
 	: mTerrainGroup(0),
-	mTerrainGlobals(0)
+	mTerrainGlobals(0),
+	// animation defaults
+	mDistance(0),
+	mWalkSpd(80.0),
+	mDirection(Ogre::Vector3::ZERO),
+	mDestination(Ogre::Vector3::ZERO),
+	mAnimationState(0),
+	mEntity(0),
+	mNode(0)
 {
 }
 //----------------------------------------------------------------
@@ -34,27 +42,18 @@ void SimRunnable::setup(void) {
 	mScnMgr = root->createSceneManager();
 	mScnMgr->addRenderQueueListener(getOverlaySystem());
 	mTrayMgr = new OgreBites::TrayManager("InterfaceName", getRenderWindow(), this);
-	mTrayMgr->showFrameStats(OgreBites::TrayLocation::TL_BOTTOMLEFT);
+	mCoordsBox = mTrayMgr->createTextBox(OgreBites::TL_BOTTOMRIGHT, "CoordsBox", "Coordinates", 400.0f, 150.0f);
 
 	addInputListener(mTrayMgr);
 
 	Ogre::RTShader::ShaderGenerator* shadergen = Ogre::RTShader::ShaderGenerator::getSingletonPtr();
 	shadergen->addSceneManager(mScnMgr);
 
-	cameraAnchor = mScnMgr->getRootSceneNode()->createChildSceneNode("camAnchor");
-	cameraNode = cameraAnchor->createChildSceneNode("camNode");
-	mCamera = mScnMgr->createCamera("myCam");
-	cameraAnchor->setPosition(Ogre::Vector3::ZERO + Ogre::Vector3(500, 500, 1000));
-	//camAnchor->setPosition(Ogre::Vector3::ZERO + Ogre::Vector3(1683, 1900, 2116));
-	cameraNode->lookAt(Ogre::Vector3(500, 0, 80), Ogre::Node::TransformSpace::TS_WORLD);
-
-//
-	cameraNode->attachObject(mCamera);
-	Ogre::Viewport* vp = getRenderWindow()->addViewport(mCamera);
-	vp->setBackgroundColour(Ogre::ColourValue(0, 0, 0));
-	mCamera->setAspectRatio(Ogre::Real(vp->getActualWidth()) / Ogre::Real(vp->getActualHeight()));
-
-	root->addFrameListener(this);
+	mainNode = mScnMgr->getRootSceneNode()->createChildSceneNode("mainNode");
+	// Set the base location of our main node
+	// The main node will hold the camera and the 'tractor' and their position will be relative
+	// to the main node (their parent)
+	mainNode->setPosition(Ogre::Vector3(1, 2.5, 1) * Offsets::cellSize);
 
 	mScnMgr->setAmbientLight(Ogre::ColourValue(0.85f, 0.85f, 0.85f));
 	Ogre::Light* spotLight = mScnMgr->createLight("SpotLight");
@@ -145,17 +144,46 @@ void SimRunnable::setup(void) {
 
 	mScnMgr->setSkyBox(true, "Examples/SpaceSkyBox", 300);
 
-	/** Set up 'tractor' - atm just any entity */
-	Ogre::Entity* myEntity = mScnMgr->createEntity("robot.mesh");
-	Ogre::SceneNode* myNode = mScnMgr->getRootSceneNode()->createChildSceneNode();
+	/**
+		Add an entity (ideally a tractor but in this case a robot) as a child of the main node
+	    that way when the main node moves, the entity moves with it
+	*/
+	mEntity = mScnMgr->createEntity("robot.mesh");
+	mNode = mainNode->createChildSceneNode("robotNode");
+	mNode->attachObject(mEntity);
 
-	myNode->setPosition(80, 200, 80);
-	//myNode->roll(Ogre::Degree(90.0), Ogre::Node::TS_PARENT);
-	//myNode->yaw(Ogre::Degree(-90));
-	//myNode->setScale(1, 1, 1);
-	myNode->attachObject(myEntity);
+	// Spin the robot so it faces the correct direction when the app starts
+	mNode->yaw(Ogre::Degree(-90));
 
+	/** Set up animation for entity as grid cells along a path - in this case it just walks around a rectangle*/
+	mWalkList.push_back(Ogre::Vector3(1, 2.5, 6));
+	mWalkList.push_back(Ogre::Vector3(5, 2.5, 6));
+	mWalkList.push_back(Ogre::Vector3(5, 2.5, 1));
+	mWalkList.push_back(Ogre::Vector3(1, 2.5, 1));
 
+	mAnimationState = mEntity->getAnimationState("Idle");
+	mAnimationState->setLoop(true);
+	mAnimationState->setEnabled(true);
+
+	/** Set up a camera as a child of the main node
+	    Same story as the 'tractor', set as a child of the main node*/
+	cameraAnchor = mainNode->createChildSceneNode("cameraAnchor");
+	cameraNode = cameraAnchor->createChildSceneNode("camNode");
+	mCamera = mScnMgr->createCamera("myCam");
+	// Offset it a little bit so it doesn't sit smack in the middle of our entity
+	cameraAnchor->setPosition(Ogre::Vector3(0, 4, -2) * Offsets::cellSize);
+	// for some reason it's upside down?? flip it back over
+	cameraAnchor->yaw(Ogre::Degree(180));
+
+	cameraNode->attachObject(mCamera);
+	Ogre::Viewport* vp = getRenderWindow()->addViewport(mCamera);
+	vp->setBackgroundColour(Ogre::ColourValue(0, 0, 0));
+	mCamera->setAspectRatio(Ogre::Real(vp->getActualWidth()) / Ogre::Real(vp->getActualHeight()));
+
+	// tell the camera to look at the tractor node
+	cameraNode->setAutoTracking(true, mNode);
+
+	root->addFrameListener(this);
 }
 
 void SimRunnable::createFields(Ogre::Terrain* terrain, std::vector<std::pair<Ogre::Vector3, Ogre::Vector3>> fields)
@@ -311,6 +339,101 @@ void SimRunnable::initBlendMaps(Ogre::Terrain* terrain)
 	blendMap1->update();
 }
 //----------------------------------------------------------------
+
+bool SimRunnable::frameRenderingQueued(const Ogre::FrameEvent& fe)
+{
+	if (mDirection == Ogre::Vector3::ZERO)
+	{
+		if (nextLocation())
+		{
+			mAnimationState = mEntity->getAnimationState("Walk");
+			mAnimationState->setLoop(true);
+			mAnimationState->setEnabled(true);
+		}
+	}
+	else
+	{
+		Ogre::Real move = mWalkSpd * fe.timeSinceLastFrame;
+		mDistance -= move;
+
+		if (mDistance <= 0.0)
+		{
+			mainNode->setPosition(mDestination);
+			mDirection = Ogre::Vector3::ZERO;
+
+			if (nextLocation())
+			{
+				Ogre::Vector3 entitySrc = mainNode->getOrientation() * Ogre::Vector3::UNIT_Z;
+
+				if ((1.0 + entitySrc.dotProduct(mDirection)) < 0.0001)
+				{
+					mainNode->yaw(Ogre::Degree(180));
+				}
+				else
+				{
+					Ogre::Quaternion quat = entitySrc.getRotationTo(mDirection);
+					mainNode->rotate(quat);
+				}
+			}
+			else
+			{
+				mAnimationState = mEntity->getAnimationState("Idle");
+				mAnimationState->setLoop(true);
+				mAnimationState->setEnabled(true);
+			}
+		}
+		else
+		{
+			mainNode->translate(move * mDirection);
+			updateCoords();
+
+		}
+	}
+
+	mAnimationState->addTime(fe.timeSinceLastFrame);
+	
+	return true;
+}
+
+Ogre::Vector2 SimRunnable::updateCoords()
+{
+	int x = mainNode->getPosition().x;
+	int z = mainNode->getPosition().z;
+
+	/*int cell_x = x % Offsets::cellSize > 0 ? (x / Offsets::cellSize) + 1 : x / Offsets::cellSize;
+	int cell_z = z % Offsets::cellSize > 0 ? (z / Offsets::cellSize) + 1 : z / Offsets::cellSize;*/
+
+	int cell_x = x / Offsets::cellSize;
+	int cell_z = z / Offsets::cellSize;
+
+	Ogre::StringStream ss = Ogre::StringStream();
+	ss << "Coords x: " << x << " z: " << z << "\n";
+	// ss << "Cell x: " << cell_x << " z: " << cell_z << "\n";
+	//ss << "robot orient: " << mNode->getOrientation() << "\n";
+	//ss << "main orient: " << mainNode->getOrientation() << "\n";
+	ss << "direction: " << mDirection << "\n";
+	ss << "direction: " << mDirection * Ogre::Vector3::UNIT_X << "\n";
+
+	mCoordsBox->setText(ss.str());
+
+	return Ogre::Vector2(cell_x, cell_z);
+}
+
+bool SimRunnable::nextLocation()
+{
+	if (mWalkList.empty())
+		return false;
+	
+	// If you wanted to center the entity instead of walking along an edge
+	// you'd +/- half a cell size
+	mDestination = mWalkList.front() * Offsets::cellSize;
+	mWalkList.pop_front();
+	Ogre::Vector3 mainPos = mainNode->getPosition();
+	mDirection = mDestination - mainPos;
+	mDistance = mDirection.normalise();
+
+	return true;
+}
 
 #if OGRE_PLATFORM == OGRE_PLATFORM_WIN32
 #define WIN32_LEAN_AND_MEAN
