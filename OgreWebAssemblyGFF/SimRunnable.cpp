@@ -6,6 +6,7 @@ namespace Offsets {
 	extern const float baseHeight = 200;
 
 	extern const int cellSize = 80;
+	extern const int halfCellOffset = 40;
 	extern const float heightOffset = 200;
 
 	extern const float brushSize = 0.025;
@@ -156,10 +157,11 @@ void SimRunnable::setup(void) {
 	mNode->yaw(Ogre::Degree(-90));
 
 	/** Set up animation for entity as grid cells along a path - in this case it just walks around a rectangle*/
-	mWalkList.push_back(Ogre::Vector3(1, 2.5, 6));
+	PathPlanning::planPath(&mWalkList);
+	/*mWalkList.push_back(Ogre::Vector3(1, 2.5, 6));
 	mWalkList.push_back(Ogre::Vector3(5, 2.5, 6));
 	mWalkList.push_back(Ogre::Vector3(5, 2.5, 1));
-	mWalkList.push_back(Ogre::Vector3(1, 2.5, 1));
+	mWalkList.push_back(Ogre::Vector3(1, 2.5, 1));*/
 
 	mAnimationState = mEntity->getAnimationState("Idle");
 	mAnimationState->setLoop(true);
@@ -275,6 +277,7 @@ void SimRunnable::configureTerrainDefaults(Ogre::Light* light)
 	importData.layerList[2].worldSize = 200;
 	importData.layerList[2].textureNames.push_back("tiaga_seamless_0_diffusespecular.png");
 	importData.layerList[2].textureNames.push_back("tiaga_seamless_0_normalheight.png");
+
 }
 
 void getTerrainImage(bool flipX, bool flipY, Ogre::Image& img)
@@ -367,12 +370,17 @@ bool SimRunnable::frameRenderingQueued(const Ogre::FrameEvent& fe)
 
 				if ((1.0 + entitySrc.dotProduct(mDirection)) < 0.0001)
 				{
-					mainNode->yaw(Ogre::Degree(180));
+					//mainNode->yaw(Ogre::Degree(180));
+					mainNode->yaw(Ogre::Degree(10));
 				}
 				else
 				{
+					Ogre::Quaternion originQuat = entitySrc.getRotationTo(entitySrc);
 					Ogre::Quaternion quat = entitySrc.getRotationTo(mDirection);
-					mainNode->rotate(quat);
+					
+					//mainNode->rotate(quat);
+					Ogre::Quaternion slerpQuat = Ogre::Quaternion::Slerp(0.95, originQuat, quat, true);
+					mainNode->rotate(slerpQuat);
 				}
 			}
 			else
@@ -408,11 +416,6 @@ Ogre::Vector2 SimRunnable::updateCoords()
 
 	Ogre::StringStream ss = Ogre::StringStream();
 	ss << "Coords x: " << x << " z: " << z << "\n";
-	// ss << "Cell x: " << cell_x << " z: " << cell_z << "\n";
-	//ss << "robot orient: " << mNode->getOrientation() << "\n";
-	//ss << "main orient: " << mainNode->getOrientation() << "\n";
-	ss << "direction: " << mDirection << "\n";
-	ss << "direction: " << mDirection * Ogre::Vector3::UNIT_X << "\n";
 
 	mCoordsBox->setText(ss.str());
 
@@ -424,10 +427,23 @@ bool SimRunnable::nextLocation()
 	if (mWalkList.empty())
 		return false;
 	
-	// If you wanted to center the entity instead of walking along an edge
-	// you'd +/- half a cell size
-	mDestination = mWalkList.front() * Offsets::cellSize;
+	mDestination = Ogre::Vector3(
+		mWalkList.front()->x * Offsets::cellSize + Offsets::halfCellOffset,
+		mWalkList.front()->y * Offsets::cellSize,
+		mWalkList.front()->z * Offsets::cellSize + Offsets::halfCellOffset
+	);
 	mWalkList.pop_front();
+
+	int cell_x = mDestination.x / Offsets::cellSize;
+	int cell_z = mDestination.z / Offsets::cellSize;
+
+	Ogre::TerrainGroup::TerrainIterator ti = mTerrainGroup->getTerrainIterator();
+	while (ti.hasMoreElements())
+	{
+		Ogre::Terrain* t = ti.getNext()->instance;
+		PathPlanning::alterTerrain(t, mTerrainGroup, mainNode->getPosition(), Ogre::Vector2(cell_x, cell_z));
+	}
+
 	Ogre::Vector3 mainPos = mainNode->getPosition();
 	mDirection = mDestination - mainPos;
 	mDistance = mDirection.normalise();

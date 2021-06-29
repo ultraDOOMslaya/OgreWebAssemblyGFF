@@ -10,6 +10,8 @@
 #include <OgreTerrain.h>
 #include <OgreTerrainGroup.h>
 
+#include "PathPlanning.h"
+
 struct Cell {
 	int x;
 	int y;
@@ -50,7 +52,7 @@ public:
 
 	// Handle Animation
 	bool nextLocation();
-	std::deque<Ogre::Vector3> mWalkList;
+	std::deque<Ogre::Vector3*> mWalkList;
 
 	Ogre::Real mDistance;
 	Ogre::Real mWalkSpd;
