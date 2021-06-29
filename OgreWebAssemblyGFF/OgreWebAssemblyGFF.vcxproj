@@ -153,9 +153,11 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="PathPlanning.cpp" />
     <ClCompile Include="SimRunnable.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="PathPlanning.h" />
     <ClInclude Include="SimRunnable.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

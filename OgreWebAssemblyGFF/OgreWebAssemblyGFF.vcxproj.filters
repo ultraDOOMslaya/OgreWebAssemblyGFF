@@ -18,9 +18,15 @@
     <ClCompile Include="SimRunnable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PathPlanning.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="SimRunnable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PathPlanning.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
